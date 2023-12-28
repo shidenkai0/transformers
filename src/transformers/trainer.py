@@ -1409,9 +1409,7 @@ class Trainer:
 
             xm.optimizer_step = patched_optimizer_step
         elif is_sagemaker_dp_enabled():
-            model = nn.parallel.DistributedDataParallel(
-                model, device_ids=[int(os.getenv("SMDATAPARALLEL_LOCAL_RANK"))]
-            )
+            model = nn.parallel.DistributedDataParallel(model, device_ids=[int(os.getenv("SMDATAPARALLEL_LOCAL_RANK"))])
         elif self.args.parallel_mode == ParallelMode.DISTRIBUTED:
             if is_torch_neuroncore_available():
                 return model
@@ -1806,9 +1804,7 @@ class Trainer:
                 self._past = None
 
             steps_in_epoch = (
-                len(epoch_iterator)
-                if len_dataloader is not None
-                else args.max_steps * args.gradient_accumulation_steps
+                len(epoch_iterator) if len_dataloader is not None else args.max_steps * args.gradient_accumulation_steps
             )
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
 
@@ -2233,9 +2229,7 @@ class Trainer:
             else:
                 logger.warning(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
         if len(load_result.unexpected_keys) != 0:
-            logger.warning(
-                f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}."
-            )
+            logger.warning(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
 
     def _maybe_log_save_evaluate(self, tr_loss, model, trial, epoch, ignore_keys_for_eval):
         if self.control.should_log:
@@ -2912,9 +2906,7 @@ class Trainer:
                 else:
                     torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
         else:
-            self.model.save_pretrained(
-                output_dir, state_dict=state_dict, safe_serialization=self.args.save_safetensors
-            )
+            self.model.save_pretrained(output_dir, state_dict=state_dict, safe_serialization=self.args.save_safetensors)
 
         if self.tokenizer is not None:
             self.tokenizer.save_pretrained(output_dir)
@@ -3202,7 +3194,7 @@ class Trainer:
         else:
             logger.info("  Num examples: Unknown")
         logger.info(f"  Batch size = {batch_size}")
-
+        logger.debug(f"model.eval()")
         model.eval()
 
         self.callback_handler.eval_dataloader = dataloader
@@ -3238,64 +3230,103 @@ class Trainer:
                     batch_size = observed_batch_size
 
             # Prediction step
+            logger.debug("PredictionStep")
             loss, logits, labels = self.prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
+            logger.debug(
+                f"Prediction step ouput shapes: loss: {loss.shape}, logits: {logits.shape}, labels: {labels.shape}"
+            )
             main_input_name = getattr(self.model, "main_input_name", "input_ids")
+            logger.debug(f"main_input_name: {main_input_name}")
             inputs_decode = self._prepare_input(inputs[main_input_name]) if args.include_inputs_for_metrics else None
-
+            logger.debug(f"inputs_decode: {inputs_decode.shape if inputs_decode is not None else None}")
             if is_torch_tpu_available():
+                logger.debug("xm.mark_step()")
                 xm.mark_step()
 
             # Update containers on host
             if loss is not None:
+                logger.debug("losses gather")
                 losses = self.gather_function((loss.repeat(batch_size)))
+                logger.debug(f"losses gather: losses.shape:{losses.shape}")
                 losses_host = losses if losses_host is None else nested_concat(losses_host, losses, padding_index=-100)
             if labels is not None:
+                logger.debug("labels pad_across_processes")
                 labels = self.accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
+                logger.debug(f"labels pad_across_processes: labels.shape:{labels.shape}")
             if inputs_decode is not None:
+                logger.debug("inputs_decode gather")
                 inputs_decode = self.accelerator.pad_across_processes(inputs_decode, dim=1, pad_index=-100)
+                logger.debug(f"inputs_decode pad_across_processes: inputs_decode.shape:{inputs_decode.shape}")
                 inputs_decode = self.gather_function((inputs_decode))
+                logger.debug(f"inputs_decode gather: inputs_decode.shape:{inputs_decode.shape}")
                 inputs_host = (
                     inputs_decode
                     if inputs_host is None
                     else nested_concat(inputs_host, inputs_decode, padding_index=-100)
                 )
             if logits is not None:
+                logger.debug("logits gather")
                 logits = self.accelerator.pad_across_processes(logits, dim=1, pad_index=-100)
+                logger.debug(f"logits gather: logits.shape:{logits.shape}")
                 if self.preprocess_logits_for_metrics is not None:
+                    logger.debug("preprocess_logits_for_metrics")
                     logits = self.preprocess_logits_for_metrics(logits, labels)
+                    logger.debug(f"preprocess_logits_for_metrics: logits.shape:{logits.shape}")
+
+                logger.debug("logits gather_function")
                 logits = self.gather_function((logits))
+                logger.debug(f"logits gather_function: logits.shape:{logits.shape}")
                 preds_host = logits if preds_host is None else nested_concat(preds_host, logits, padding_index=-100)
 
             if labels is not None:
+                logger.debug("labels gather_function")
                 labels = self.gather_function((labels))
+                logger.debug(f"labels gather_function: labels.shape:{labels.shape}")
                 labels_host = labels if labels_host is None else nested_concat(labels_host, labels, padding_index=-100)
+                logger.debug(f"labels_host: labels_host.shape:{labels_host.shape}")
 
+            logger.debug("control = self.callback_handler.on_prediction_step")
             self.control = self.callback_handler.on_prediction_step(args, self.state, self.control)
+            logger.debug("control = self.callback_handler.on_prediction_step done")
 
             # Gather all tensors and put them back on the CPU if we have done enough accumulation steps.
             if args.eval_accumulation_steps is not None and (step + 1) % args.eval_accumulation_steps == 0:
+                logger.debug("Gather tensors and put them back on the CPU")
+                logger.debug(
+                    f"losses_host: {losses_host.shape if losses_host is not None else None}, preds_host: {preds_host.shape if preds_host is not None else None}, inputs_host: {inputs_host.shape if inputs_host is not None else None}, labels_host: {labels_host.shape if labels_host is not None else None}"
+                )
                 if losses_host is not None:
+                    logger.debug("losses nested_numpify")
                     losses = nested_numpify(losses_host)
+                    logger.debug(f"losses nested_numpify: losses.shape:{losses.shape}")
                     all_losses = losses if all_losses is None else np.concatenate((all_losses, losses), axis=0)
+                    logger.debug(f"all_losses: {all_losses.shape if all_losses is not None else None}")
                 if preds_host is not None:
+                    logger.debug("preds nested_numpify")
                     logits = nested_numpify(preds_host)
+                    logger.debug(f"preds nested_numpify: logits.shape:{logits.shape}")
                     all_preds = logits if all_preds is None else nested_concat(all_preds, logits, padding_index=-100)
+                    logger.debug(f"all_preds: {all_preds.shape if all_preds is not None else None}")
                 if inputs_host is not None:
+                    logger.debug("inputs nested_numpify")
                     inputs_decode = nested_numpify(inputs_host)
+                    logger.debug(f"inputs nested_numpify: inputs_decode.shape:{inputs_decode.shape}")
                     all_inputs = (
                         inputs_decode
                         if all_inputs is None
                         else nested_concat(all_inputs, inputs_decode, padding_index=-100)
                     )
+                    logger.debug(f"all_inputs: {all_inputs.shape if all_inputs is not None else None}")
+
                 if labels_host is not None:
+                    logger.debug("labels nested_numpify")
                     labels = nested_numpify(labels_host)
-                    all_labels = (
-                        labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
-                    )
+                    logger.debug(f"labels nested_numpify: labels.shape:{labels.shape}")
+                    all_labels = labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
+                    logger.debug(f"all_labels: {all_labels.shape if all_labels is not None else None}")
 
                 # Set back to None to begin a new accumulation
                 losses_host, preds_host, inputs_host, labels_host = None, None, None, None
-
         # After all calls to `.gather_function`, reset to `gather_for_metrics`:
         self.gather_function = self.accelerator.gather_for_metrics
         if args.past_index and hasattr(self, "_past"):
