@@ -3229,8 +3229,9 @@ class Trainer:
                 if batch_size is None:
                     batch_size = observed_batch_size
 
+            inputs_shapes = {k: v.shape for k, v in inputs.items()}
             # Prediction step
-            logger.debug(f"PredictionStep: self.prediction_step(model=model, inputs={[k, v.shape for k, v in inputs.items()]}, prediction_loss_only={prediction_loss_only}, ignore_keys={ignore_keys})")
+            logger.debug(f"PredictionStep: self.prediction_step(model=model, inputs={inputs_shapes}, prediction_loss_only={prediction_loss_only}, ignore_keys={ignore_keys})")
             loss, logits, labels = self.prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
             logger.debug(
                 f"Prediction step ouput shapes: loss: {loss.shape}, logits: {logits.shape}, labels: {labels.shape}"
