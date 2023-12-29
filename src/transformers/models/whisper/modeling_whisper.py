@@ -1803,7 +1803,8 @@ class WhisperForConditionalGeneration(WhisperPreTrainedModel):
         >>> transcription
         ' Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.'
         ```"""
-        logger.debug("WhisperForConditionalGeneration.forward")
+        # Print shapes of input tensors if they are passed.
+        logger.debug(f"WhisperForConditionalGeneration.forward input_features: {input_features.shape if input_features is not None else None} \n decoder_input_ids: {decoder_input_ids.shape if decoder_input_ids is not None else None} \n decoder_inputs_embeds: {decoder_inputs_embeds.shape if decoder_inputs_embeds is not None else None} \n labels: {labels.shape if labels is not None else None}")
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if labels is not None:
