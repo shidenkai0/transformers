@@ -3443,9 +3443,9 @@ class Trainer:
             logits and labels (each being optional).
         """
         input_shapes = {k: v.shape for k, v in inputs.items()}
-        logger.debug(f"prediction_step: inputs: {input_shapes}")
+        logger.debug(f"Trainer.prediction_step: inputs: {input_shapes}")
         has_labels = False if len(self.label_names) == 0 else all(inputs.get(k) is not None for k in self.label_names)
-        logger.debug(f"prediction_step: has_labels: {has_labels}")
+        logger.debug(f"Trainer.prediction_step: has_labels: {has_labels}")
 
         # For CLIP-like models capable of returning loss values.
         # If `return_loss` is not specified or being `None` in `inputs`, we check if the default value of `return_loss`
@@ -3454,11 +3454,11 @@ class Trainer:
         if return_loss is None:
             return_loss = self.can_return_loss
         loss_without_labels = True if len(self.label_names) == 0 and return_loss else False
-        logger.debug(f"prediction_step: loss_without_labels: {loss_without_labels}")
+        logger.debug(f"Trainer.prediction_step: loss_without_labels: {loss_without_labels}")
 
         inputs = self._prepare_inputs(inputs)
         inputs_shapes = {k: v.shape for k, v in inputs.items()}
-        logger.debug(f"prediction_step: inputs after _prepare_inputs: {inputs_shapes}")
+        logger.debug(f"Trainer.prediction_step: inputs after _prepare_inputs: {inputs_shapes}")
         if ignore_keys is None:
             if hasattr(self.model, "config"):
                 ignore_keys = getattr(self.model.config, "keys_to_ignore_at_inference", [])
@@ -3467,9 +3467,9 @@ class Trainer:
 
         # labels may be popped when computing the loss (label smoothing for instance) so we grab them first.
         if has_labels or loss_without_labels:
-            logger.debug(f"prediction_step: has_labels or loss_without_labels")
+            logger.debug(f"Trainer.prediction_step: has_labels or loss_without_labels")
             labels = nested_detach(tuple(inputs.get(name) for name in self.label_names))
-            logger.debug(f"prediction_step: labels after nested_detach: {labels}")
+            logger.debug(f"Trainer.prediction_step: labels after nested_detach: {labels}")
             if len(labels) == 1:
                 labels = labels[0]
         else:
@@ -3477,7 +3477,7 @@ class Trainer:
 
         with torch.no_grad():
             if is_sagemaker_mp_enabled():
-                logger.debug(f"prediction_step: is_sagemaker_mp_enabled")
+                logger.debug(f"Trainer.prediction_step: is_sagemaker_mp_enabled")
                 raw_outputs = smp_forward_only(model, inputs)
                 if has_labels or loss_without_labels:
                     if isinstance(raw_outputs, dict):
@@ -3497,26 +3497,26 @@ class Trainer:
                         logits_mb = raw_outputs
                     logits = smp_nested_concat(logits_mb)
             else:
-                logger.debug(f"prediction_step: not is_sagemaker_mp_enabled")
+                logger.debug(f"Trainer.prediction_step: not is_sagemaker_mp_enabled")
                 if has_labels or loss_without_labels:
-                    logger.debug(f"prediction_step: has_labels or loss_without_labels")
+                    logger.debug(f"Trainer.prediction_step: has_labels or loss_without_labels")
                     with self.compute_loss_context_manager():
                         loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
                         output_shapes = (
                             {k: v.shape for k, v in outputs.items()} if isinstance(outputs, dict) else outputs.shape
                         )
-                        logger.debug(f"prediction_step: loss, outputs: {loss.shape}, {output_shapes}")
+                        logger.debug(f"Trainer.prediction_step: loss, outputs: {loss.shape}, {output_shapes}")
                     loss = loss.mean().detach()
-                    logger.debug(f"prediction_step: loss after mean().detach(): {loss.shape}")
+                    logger.debug(f"Trainer.prediction_step: loss after mean().detach(): {loss.shape}")
                     if isinstance(outputs, dict):
                         logits_shapes = {k: v.shape for k, v in outputs.items() if k not in ignore_keys + ["loss"]}
                         logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
-                        logger.debug(f"prediction_step: outputs is dict: logits: {logits_shapes}")
+                        logger.debug(f"Trainer.prediction_step: outputs is dict: logits: {logits_shapes}")
                     else:
                         logits = outputs[1:]
-                        logger.debug(f"prediction_step: outputs is not dict: logits: {logits.shape}")
+                        logger.debug(f"Trainer.prediction_step: outputs is not dict: logits: {logits.shape}")
                 else:
-                    logger.debug(f"prediction_step: not has_labels or loss_without_labels")
+                    logger.debug(f"Trainer.prediction_step: not has_labels or loss_without_labels")
                     loss = None
                     with self.compute_loss_context_manager():
                         outputs = model(**inputs)

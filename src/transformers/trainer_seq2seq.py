@@ -261,12 +261,16 @@ class Seq2SeqTrainer(Trainer):
         """
 
         if not self.args.predict_with_generate or prediction_loss_only:
+            logger.debug(f"Seq2SeqTrainer.prediction_step: prediction_loss_only={prediction_loss_only}")
             return super().prediction_step(
                 model, inputs, prediction_loss_only=prediction_loss_only, ignore_keys=ignore_keys
             )
 
         has_labels = "labels" in inputs
+        logger.debug(f"Seq2SeqTrainer.prediction_step: has_labels={has_labels}")
         inputs = self._prepare_inputs(inputs)
+        inputs_shapes = {k: v.shape for k, v in inputs.items()}
+        logger.debug(f"Seq2SeqTrainer.prediction_step: inputs after _prepare_inputs={inputs_shapes}")
 
         # Priority (handled in generate):
         # non-`None` gen_kwargs > model.generation_config > default GenerationConfig()
@@ -277,12 +281,15 @@ class Seq2SeqTrainer(Trainer):
         if "max_length" in gen_kwargs and gen_kwargs["max_length"] is None:
             gen_kwargs.pop("max_length")
 
+        logger.debug(f"Seq2SeqTrainer.prediction_step: gen_kwargs={gen_kwargs}")
         default_synced_gpus = True if is_deepspeed_zero3_enabled() else False
+        logger.debug(f"Seq2SeqTrainer.prediction_step: default_synced_gpus={default_synced_gpus}")
         gen_kwargs["synced_gpus"] = (
             gen_kwargs["synced_gpus"] if gen_kwargs.get("synced_gpus") is not None else default_synced_gpus
         )
-
+        logger.debug(f"Seq2SeqTrainer.prediction_step: before inputs copy")
         generation_inputs = inputs.copy()
+        logger.debug(f"Seq2SeqTrainer.prediction_step: after inputs copy")
         # If the `decoder_input_ids` was created from `labels`, evict the former, so that the model can freely generate
         # (otherwise, it would continue generating from the padded `decoder_input_ids`)
         if (
@@ -290,32 +297,48 @@ class Seq2SeqTrainer(Trainer):
             and "decoder_input_ids" in generation_inputs
             and generation_inputs["labels"].shape == generation_inputs["decoder_input_ids"].shape
         ):
+            logger.debug(f"Seq2SeqTrainer.prediction_step: evicting decoder_input_ids")
             generation_inputs = {
                 k: v for k, v in inputs.items() if k not in ("decoder_input_ids", "decoder_attention_mask")
             }
         generated_tokens = self.model.generate(**generation_inputs, **gen_kwargs)
+        logger.debug(f"Seq2SeqTrainer.prediction_step: generated_tokens={generated_tokens.shape}")
 
         # Temporary hack to ensure the generation config is not initialized for each iteration of the evaluation loop
         # TODO: remove this hack when the legacy code that initializes generation_config from a model config is
         # removed in https://github.com/huggingface/transformers/blob/98d88b23f54e5a23e741833f1e973fdf600cc2c5/src/transformers/generation/utils.py#L1183
         if self.model.generation_config._from_model_config:
             self.model.generation_config._from_model_config = False
+        logger.debug(f"Seq2SeqTrainer.prediction_step: generation_config={self.model.generation_config}")
 
         # Retrieves GenerationConfig from model.generation_config
         gen_config = self.model.generation_config
         # in case the batch is shorter than max length, the output should be padded
         if generated_tokens.shape[-1] < gen_config.max_length:
+            logger.debug(
+                f"Seq2SeqTrainer.prediction_step: padding generated_tokens to max_length={gen_config.max_length}"
+            )
             generated_tokens = self._pad_tensors_to_max_len(generated_tokens, gen_config.max_length)
+            logger.debug(f"Seq2SeqTrainer.prediction_step: after padding generated_tokens={generated_tokens.shape}")
+            generated_tokens
         elif gen_config.max_new_tokens is not None and generated_tokens.shape[-1] < gen_config.max_new_tokens + 1:
+            logger.debug(
+                f"Seq2SeqTrainer.prediction_step: padding generated_tokens to max_new_tokens={gen_config.max_new_tokens}"
+            )
             generated_tokens = self._pad_tensors_to_max_len(generated_tokens, gen_config.max_new_tokens + 1)
+            logger.debug(f"Seq2SeqTrainer.prediction_step: after padding generated_tokens={generated_tokens.shape}")
 
         with torch.no_grad():
             if has_labels:
                 with self.compute_loss_context_manager():
+                    logger.debug(f"Seq2SeqTrainer.prediction_step: computing loss")
                     outputs = model(**inputs)
                 if self.label_smoother is not None:
+                    logger.debug(f"Seq2SeqTrainer.prediction_step: applying label_smoother")
                     loss = self.label_smoother(outputs, inputs["labels"]).mean().detach()
+                    logger.debug(f"Seq2SeqTrainer.prediction_step: loss after label_smoother={loss}")
                 else:
+                    logger.debug(f"Seq2SeqTrainer.prediction_step: not applying label_smoother")
                     loss = (outputs["loss"] if isinstance(outputs, dict) else outputs[0]).mean().detach()
             else:
                 loss = None
