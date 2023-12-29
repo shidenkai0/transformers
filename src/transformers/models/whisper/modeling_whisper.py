@@ -207,9 +207,7 @@ def _compute_mask_indices(
     spec_aug_mask_idxs = np.array(spec_aug_mask_idxs)
 
     # expand masked indices to masked spans
-    spec_aug_mask_idxs = np.broadcast_to(
-        spec_aug_mask_idxs[:, :, None], (batch_size, max_num_masked_span, mask_length)
-    )
+    spec_aug_mask_idxs = np.broadcast_to(spec_aug_mask_idxs[:, :, None], (batch_size, max_num_masked_span, mask_length))
     spec_aug_mask_idxs = spec_aug_mask_idxs.reshape(batch_size, max_num_masked_span * mask_length)
 
     # add offset to the starting indexes so that indexes now create a span
@@ -361,7 +359,6 @@ class WhisperAttention(nn.Module):
         output_attentions: bool = False,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         """Input shape: Batch x Time x Channel"""
-
         # if key_value_states are provided this layer is used as a cross-attention layer
         # for the decoder
         is_cross_attention = key_value_states is not None
@@ -1302,9 +1299,7 @@ class WhisperEncoder(WhisperPreTrainedModel):
 
         if not return_dict:
             return tuple(v for v in [hidden_states, encoder_states, all_attentions] if v is not None)
-        return BaseModelOutput(
-            last_hidden_state=hidden_states, hidden_states=encoder_states, attentions=all_attentions
-        )
+        return BaseModelOutput(last_hidden_state=hidden_states, hidden_states=encoder_states, attentions=all_attentions)
 
 
 class WhisperDecoder(WhisperPreTrainedModel):
@@ -1665,6 +1660,7 @@ class WhisperModel(WhisperPreTrainedModel):
          >>> list(last_hidden_state.shape)
          [1, 2, 512]
          ```"""
+        logger.debug("WhisperModel.forward")
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -1807,6 +1803,7 @@ class WhisperForConditionalGeneration(WhisperPreTrainedModel):
         >>> transcription
         ' Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.'
         ```"""
+        logger.debug("WhisperForConditionalGeneration.forward")
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if labels is not None:
@@ -2029,7 +2026,7 @@ class WhisperForConditionalGeneration(WhisperPreTrainedModel):
         ```
 
         """
-
+        logger.debug("WhisperForConditionalGeneration.generate")
         if "inputs" in kwargs:
             input_features = kwargs.pop("inputs")
             warnings.warn(
@@ -2368,8 +2365,7 @@ class WhisperForConditionalGeneration(WhisperPreTrainedModel):
             if return_dict_in_generate:
                 seek_sequences = seek_outputs["sequences"]
                 seek_outputs = [
-                    {k: v[i] for k, v in seek_outputs.items()}
-                    for i in range(next(iter(seek_outputs.values())).size(0))
+                    {k: v[i] for k, v in seek_outputs.items()} for i in range(next(iter(seek_outputs.values())).size(0))
                 ]
             else:
                 seek_sequences = seek_outputs
