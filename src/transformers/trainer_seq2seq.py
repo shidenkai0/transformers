@@ -301,6 +301,8 @@ class Seq2SeqTrainer(Trainer):
             generation_inputs = {
                 k: v for k, v in inputs.items() if k not in ("decoder_input_ids", "decoder_attention_mask")
             }
+        generation_inputs_shapes = {k: v.shape for k, v in generation_inputs.items()}
+        logger.debug(f"Seq2SeqTrainer.prediction_step: generation_inputs={generation_inputs_shapes}")
         generated_tokens = self.model.generate(**generation_inputs, **gen_kwargs)
         logger.debug(f"Seq2SeqTrainer.prediction_step: generated_tokens={generated_tokens.shape}")
 
